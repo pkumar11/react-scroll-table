@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 type FetchResult<T> = {
-  data: T[];
+  data: T[];// Always return an array for consistency, even if the API returns a single object
   loading: boolean;
   error: string | null;
 };
@@ -31,7 +31,7 @@ export function useFetch<T = any>(
           throw new Error(`Request failed with status ${response.status}`);
         }
 
-        const json = (await response.json()) as T[] | T;
+        const json = (await response.json()) as T[] | T;// Handle both array and single object responses
         const payload = Array.isArray(json) ? json : [json];
 
         if (!cancelled) {
@@ -43,7 +43,7 @@ export function useFetch<T = any>(
         }
       } finally {
         if (!cancelled) {
-          setLoading(false);
+          setLoading(false);// Ensure loading state is updated even if the component unmounts during the fetch
         }
       }
     };

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useTransition } from "react";
 import type { Column } from "../../lib/Constants";
 import "./Table.css";
 import {
@@ -7,7 +7,7 @@ import {
   processRows,
   type SortConfig,
 } from "./tableHelpers";
-import { throttle } from "lodash";
+import { debounce, throttle } from "lodash-es";
 
 type TableProps = {
   columns: Column[];
@@ -32,17 +32,18 @@ const Table: React.FC<TableProps> = ({
 }) => {
   const [sortConfig, setSortConfig] = useState<SortConfig>(null);
   const [filters, setFilters] = useState<Record<string, string>>({});
+  const [filterInputs, setFilterInputs] = useState<Record<string, string>>({});
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() =>
     buildInitialColumnWidths(columns)
   );
   const [resizing, setResizing] = useState<ResizeState>(null);
-  const [editingRowIndex, setEditingRowIndex] = useState<number | null>(null);
-  const [editValues, setEditValues] = useState<Record<string, any>>({});
+  const [_, startTransition] = useTransition();
 
   useEffect(() => {
     setColumnWidths((prev) => ensureColumnWidthsForColumns(prev, columns));
   }, [columns]);
 
+  // Handle column resizing by tracking mouse movements and updating column widths accordingly
   useEffect(() => {
     if (!resizing) return;
 
@@ -68,7 +69,8 @@ const Table: React.FC<TableProps> = ({
       window.removeEventListener("mouseup", handleMouseUp);
     };
   }, [resizing]);
-
+  
+// Toggle sorting configuration for a column when its header is clicked
   const handleSort = (key: string) => {
     setSortConfig((current) => {
       if (current?.key === key) {
@@ -82,13 +84,35 @@ const Table: React.FC<TableProps> = ({
     });
   };
 
+  // Debounced function to apply filters after user stops typing for 250ms
+  const debouncedApplyFilters = useMemo(
+    () =>
+      debounce((nextFilters: Record<string, string>) => {
+        startTransition(() => { // Use startTransition to mark filter application as a non-urgent update, allowing React to prioritize more urgent updates if needed
+          setFilters(nextFilters);
+        });
+      }, 250),
+    [startTransition]
+  );
+
+  // Cleanup debounce on unmount to prevent memory leaks and unintended state updates
+  useEffect(() => {
+    return () => {
+      debouncedApplyFilters.cancel();
+    };
+  }, [debouncedApplyFilters]);
+
   const handleFilterChange = (key: string, value: string) => {
-    setFilters((prev) => ({
-      ...prev,
+    const nextInputs = {
+      ...filterInputs,
       [key]: value,
-    }));
+    };
+
+    setFilterInputs(nextInputs);
+    debouncedApplyFilters(nextInputs);
   };
 
+  // Start column resize process on mouse down, capturing initial position and width
   const startResize = (
     event: React.MouseEvent<HTMLDivElement>,
     key: string
@@ -103,11 +127,6 @@ const Table: React.FC<TableProps> = ({
     });
   };
 
-  const handleRowClick = (rowIndex: number, row: Record<string, any>) => {
-    setEditingRowIndex(rowIndex);
-    setEditValues(row);
-  };
-
 
   const handleDeleteClick = (
     event: React.MouseEvent<HTMLButtonElement>,
@@ -119,12 +138,13 @@ const Table: React.FC<TableProps> = ({
     }
   };
 
+  // Throttled scroll handler to detect when user scrolls near the bottom of the table and trigger onEndReached
   const handleScroll = throttle((event: React.UIEvent<HTMLDivElement>) => {
     const target = event.currentTarget;
     const threshold = 100;
     if (
-      target.scrollTop + target.clientHeight >=
-      target.scrollHeight - threshold
+       target?.scrollTop && target?.clientHeight &&(target?.scrollTop + target?.clientHeight >=
+      target.scrollHeight - threshold)
     ) {
       if (onEndReached) {
         onEndReached();
@@ -138,19 +158,15 @@ const Table: React.FC<TableProps> = ({
   );
 
   const Row = React.memo(({ row, rowIndex }: { row: Record<string, any>; rowIndex: number }) => {
-    const isEditing = editingRowIndex === rowIndex;
     return (
       <tr
         key={rowIndex}
-        className={`table-row${isEditing ? " table-row-editing" : ""}`}
-        onClick={() => handleRowClick(rowIndex, row)}
+        className={`table-row`}
       >
         {columns.map((col) => {
           const width = columnWidths[col.key] ?? 150;
           const value =
-            isEditing && col.key in editValues
-              ? editValues[col.key]
-              : row[col.key];
+             row[col.key];
           return (
             <td
               key={col.key}
@@ -178,7 +194,7 @@ const Table: React.FC<TableProps> = ({
       </tr>
     );
   });
-
+console.log("Rendering table with", { rows: processedRows.length, columns: columns.length,processedRows });
   return (
     <div className="table-container" onScroll={handleScroll}>
       <table className="table-root">
@@ -229,7 +245,7 @@ const Table: React.FC<TableProps> = ({
                   <input
                     className="table-filter-input"
                     placeholder="Filter..."
-                    value={filters[col.key] ?? ""}
+                    value={filterInputs[col.key] ?? ""}
                     onChange={(event) =>
                       handleFilterChange(col.key, event.target.value)
                     }
@@ -248,9 +264,17 @@ const Table: React.FC<TableProps> = ({
           </tr>
         </thead>
         <tbody>
-          {processedRows.map((row, rowIndex) => (
-            <Row key={rowIndex} row={row} rowIndex={rowIndex} />
-          ))}
+          {processedRows && processedRows.length == 0 ? (
+            <tr>
+              <td colSpan={columns.length + 1} className="table-body-cell">
+                No data available
+              </td>
+            </tr>
+          ) : (
+            processedRows.map((row, rowIndex) => (
+              <Row key={rowIndex} row={row} rowIndex={rowIndex} />
+            ))
+          )}
         </tbody>
       </table>
     </div>

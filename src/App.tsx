@@ -7,7 +7,7 @@ import { columns, BATCH_SIZE } from "./lib/Constants";
 import type { TableAction } from "./reducer/tableActions";
 import { useFetch } from "./Helper/getData";
 import { faker } from "@faker-js/faker";
-
+import "./App.css";
 // Define the context type
 interface TableContextType {
   state: TableState;
@@ -41,7 +41,7 @@ export const TableProvider: React.FC<TableProviderProps> = ({ children }) => {
 
   return (
     <TableContext.Provider value={{ state, dispatch }}>
-      {children}
+      {children} 
     </TableContext.Provider>
   );
 };
@@ -81,16 +81,16 @@ const App: React.FC = () => {
   };
 
   return (
-    <TableProvider>
-      <div>
+
+      <>
        {loader ? <div className="loader">Loading...</div> : <Table
           columns={columns}
           rows={state.data}
           onEndReached={handleEndReached}
           onRowDelete={handleRowDelete}
         />}
-      </div>
-    </TableProvider>
+      </>
+
   );
 };
 
